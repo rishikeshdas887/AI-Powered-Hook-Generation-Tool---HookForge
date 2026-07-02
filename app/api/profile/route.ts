@@ -1,25 +1,38 @@
-import { createServerClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { securityHeaders, rateLimit, rateLimitError, unauthorizedError, validateBodySize } from '@/lib/security';
+import { createClient } from '@supabase/supabase-js';
+import {
+  securityHeaders,
+  rateLimit,
+  rateLimitError,
+  unauthorizedError,
+  validateBodySize,
+} from '@/lib/security';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export async function GET(request: NextRequest) {
-  // Validate body size (should be empty for GET, but check anyway)
   if (!validateBodySize(request, 1)) {
     return NextResponse.json({ error: 'Request too large' }, { status: 413 });
   }
 
-  // Rate limiting
   const rateResult = rateLimit(request, 'default');
   if (!rateResult.success) {
     return rateLimitError(rateResult.resetTime);
   }
 
-  const supabase = await createServerClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const authHeader = request.headers.get('authorization');
+  const token = authHeader?.replace('Bearer ', '');
 
-  if (!session) {
+  if (!token) {
+    return unauthorizedError();
+  }
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+  if (authError || !user) {
     return unauthorizedError();
   }
 
@@ -27,22 +40,20 @@ export async function GET(request: NextRequest) {
   let { data: profile, error } = await supabase
     .from('user_profiles')
     .select('generations_count, created_at')
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
     .single();
 
-  // If profile doesn't exist, create it
   if (error || !profile) {
     const { data: newProfile, error: createError } = await supabase
       .from('user_profiles')
-      .insert({ user_id: session.user.id })
+      .insert({ user_id: user.id })
       .select('generations_count, created_at')
       .single();
 
     if (createError) {
-      const headers = securityHeaders();
       return NextResponse.json(
         { error: 'Failed to create profile' },
-        { status: 500, headers }
+        { status: 500, headers: securityHeaders() }
       );
     }
     profile = newProfile;

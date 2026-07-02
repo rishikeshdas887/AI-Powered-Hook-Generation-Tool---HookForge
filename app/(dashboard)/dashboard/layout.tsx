@@ -1,21 +1,35 @@
-import { redirect } from 'next/navigation';
-import { createServerClient } from '@/lib/supabase/server';
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { DashboardSidebar } from '@/components/dashboard/sidebar';
+import { useAuth } from '@/hooks/use-auth';
+import { Loader2 } from 'lucide-react';
 
-export const dynamic = 'force-dynamic';
-
-export default async function DashboardLayout({
+export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createServerClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const { session, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !session) {
+      router.push('/login');
+    }
+  }, [session, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-amber-400" />
+      </div>
+    );
+  }
 
   if (!session) {
-    redirect('/login');
+    return null;
   }
 
   return (

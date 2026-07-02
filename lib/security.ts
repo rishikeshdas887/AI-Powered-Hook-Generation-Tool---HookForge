@@ -5,10 +5,11 @@ const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 
 // Rate limiting configuration
 const RATE_LIMITS = {
-  'generate-hooks': { maxRequests: 10, windowMs: 60000 }, // 10 requests per minute
-  'hooks-save': { maxRequests: 30, windowMs: 60000 }, // 30 saves per minute
-  'hooks-delete': { maxRequests: 20, windowMs: 60000 }, // 20 deletes per minute
-  'default': { maxRequests: 60, windowMs: 60000 }, // 60 requests per minute
+  'generate-hooks': { maxRequests: 10, windowMs: 60000 },
+  'hooks-save': { maxRequests: 30, windowMs: 60000 },
+  'hooks-delete': { maxRequests: 20, windowMs: 60000 },
+  'search-topics': { maxRequests: 20, windowMs: 60000 },
+  'default': { maxRequests: 60, windowMs: 60000 },
 };
 
 // Sanitize string input to prevent XSS and injection attacks
