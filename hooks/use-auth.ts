@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 interface AuthState {
@@ -26,7 +26,10 @@ export function useAuth() {
 
     const getSession = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
 
         if (error) throw error;
 
@@ -52,16 +55,28 @@ export function useAuth() {
 
     getSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session) => {
-      if (mounted) {
-        setState({
-          session,
-          user: session?.user ?? null,
-          loading: false,
-          error: null,
-        });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      (event: AuthChangeEvent, session: Session | null) => {
+        if (mounted) {
+          setState({
+            session,
+            user: session?.user ?? null,
+            loading: false,
+            error: null,
+          });
+
+          // Handle sign out event
+          if (event === 'SIGNED_OUT') {
+            // Clear any local storage
+            if (typeof window !== 'undefined') {
+              localStorage.clear();
+            }
+          }
+        }
       }
-    });
+    );
 
     return () => {
       mounted = false;
@@ -69,38 +84,59 @@ export function useAuth() {
     };
   }, [supabase.auth]);
 
-  const signInWithMagicLink = useCallback(async (email: string) => {
-    setState((prev) => ({ ...prev, loading: true, error: null }));
+  const signInWithMagicLink = useCallback(
+    async (email: string) => {
+      setState((prev) => ({ ...prev, loading: true, error: null }));
 
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+      try {
+        const { error } = await supabase.auth.signInWithOtp({
+          email,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+          },
+        });
 
-    if (error) {
-      setState((prev) => ({
-        ...prev,
-        loading: false,
-        error: error.message,
-      }));
-      return { success: false, error: error.message };
-    }
+        if (error) {
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            error: error.message,
+          }));
+          return { success: false, error: error.message };
+        }
 
-    setState((prev) => ({ ...prev, loading: false }));
-    return { success: true, error: null };
-  }, [supabase.auth]);
+        setState((prev) => ({ ...prev, loading: false }));
+        return { success: true, error: null };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to send magic link';
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          error: message,
+        }));
+        return { success: false, error: message };
+      }
+    },
+    [supabase.auth]
+  );
 
   const signOut = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true }));
-    await supabase.auth.signOut();
-    setState({
-      user: null,
-      session: null,
-      loading: false,
-      error: null,
-    });
+    try {
+      await supabase.auth.signOut();
+      setState({
+        user: null,
+        session: null,
+        loading: false,
+        error: null,
+      });
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Failed to sign out',
+      }));
+    }
   }, [supabase.auth]);
 
   return {

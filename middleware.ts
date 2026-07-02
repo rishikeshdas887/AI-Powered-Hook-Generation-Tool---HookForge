@@ -1,60 +1,76 @@
+import { createServerClient as createSSRServerClient } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 
-export function middleware(request: NextRequest) {
-  const response = NextResponse.next();
+export async function middleware(request: NextRequest) {
+  let supabaseResponse = NextResponse.next({
+    request,
+  });
+
+  const supabase = createSSRServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          );
+          supabaseResponse = NextResponse.next({
+            request,
+          });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          );
+        },
+      },
+    }
+  );
+
+  // Refresh session if expired
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
   const url = request.nextUrl;
+  const pathname = url.pathname;
 
-  // Block access to sensitive file patterns (not paths)
+  // Protected routes - redirect to login if not authenticated
+  if (pathname.startsWith('/dashboard')) {
+    if (!session) {
+      const redirectUrl = new URL('/login', request.url);
+      redirectUrl.searchParams.set('redirect', pathname);
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
+
+  // Redirect to dashboard if already logged in and trying to access login
+  if (pathname === '/login' && session) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
+  // Block access to sensitive file patterns
   const blockedPatterns = [
     '/.env',
     '/.env.local',
-    '/.env.development',
-    '/.env.production',
     '/.git/',
-    '/.gitignore',
     '/package.json',
     '/tsconfig.json',
-    '/next.config.js',
   ];
 
-  const pathname = url.pathname.toLowerCase();
-
   for (const pattern of blockedPatterns) {
-    if (pathname === pattern.toLowerCase() || pathname.startsWith(pattern.toLowerCase())) {
+    if (pathname.startsWith(pattern)) {
       return new NextResponse('Not Found', { status: 404 });
     }
   }
 
-  // Validate request method for API routes
-  if (url.pathname.startsWith('/api/')) {
-    const method = request.method;
-    const allowedMethods = ['GET', 'POST', 'DELETE', 'PUT', 'OPTIONS', 'HEAD'];
-
-    if (!allowedMethods.includes(method)) {
-      return new NextResponse(
-        JSON.stringify({ error: 'Method not allowed' }),
-        { status: 405, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Handle CORS preflight requests
-    if (method === 'OPTIONS') {
-      const headers = new Headers();
-      headers.set('Access-Control-Allow-Origin', url.origin);
-      headers.set('Access-Control-Allow-Methods', 'GET, POST, DELETE, PUT, OPTIONS');
-      headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-      headers.set('Access-Control-Max-Age', '86400');
-      return new NextResponse(null, { status: 204, headers });
-    }
-  }
-
-  return response;
+  return supabaseResponse;
 }
 
 export const config = {
   matcher: [
-    // Apply to all routes except static files and Next.js internals
-    '/((?!_next/static|_next/image|favicon.ico|icons/|public/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icons/|public/|api/).*)',
   ],
 };

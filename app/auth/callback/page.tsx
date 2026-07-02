@@ -1,51 +1,40 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 export default function AuthCallbackPage() {
-  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createBrowserClient();
 
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        const { error: authError } = await supabase.auth.exchangeCodeForSession(
+        // Exchange code for session
+        const { error } = await supabase.auth.exchangeCodeForSession(
           window.location.search
         );
 
-        if (authError) {
-          setError(authError.message);
+        if (error) {
+          console.error('Auth error:', error);
+          router.push('/login?error=' + encodeURIComponent(error.message));
           return;
         }
 
-        router.push('/dashboard');
+        // Get redirect path or default to dashboard
+        const redirect = searchParams.get('redirect') || '/dashboard';
+        router.push(redirect);
       } catch (err) {
-        setError('Authentication failed. Please try again.');
+        console.error('Auth callback error:', err);
+        router.push('/login?error=' + encodeURIComponent('Authentication failed'));
       }
     };
 
     handleCallback();
-  }, [router, supabase.auth]);
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-4">
-          <p className="text-destructive">{error}</p>
-          <a
-            href="/login"
-            className="text-amber-400 hover:text-amber-300 transition-colors"
-          >
-            Back to login
-          </a>
-        </div>
-      </div>
-    );
-  }
+  }, [router, supabase.auth, searchParams]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">

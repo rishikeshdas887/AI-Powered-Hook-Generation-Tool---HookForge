@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Zap, ArrowLeft, Mail, Loader2, CheckCircle } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { Zap, ArrowLeft, Mail, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,11 +12,20 @@ import { useAuth } from '@/hooks/use-auth';
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const { signInWithMagicLink, loading, error } = useAuth();
-  const router = useRouter();
+  const { signInWithMagicLink, loading, error: authError } = useAuth();
+  const searchParams = useSearchParams();
+  const [urlError, setUrlError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const error = searchParams.get('error');
+    if (error) {
+      setUrlError(decodeURIComponent(error));
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setUrlError(null);
 
     const result = await signInWithMagicLink(email);
 
@@ -24,6 +33,8 @@ export default function LoginPage() {
       setSubmitted(true);
     }
   };
+
+  const displayError = urlError || authError;
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -105,9 +116,10 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                {error && (
-                  <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive">
-                    {error}
+                {displayError && (
+                  <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                    <span>{displayError}</span>
                   </div>
                 )}
 
