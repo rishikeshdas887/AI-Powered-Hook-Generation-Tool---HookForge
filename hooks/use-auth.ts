@@ -34,7 +34,7 @@ export function useAuth() {
         }
       } catch {
         if (mounted) {
-          setState({ session: null, user: null, loading: false, error: 'Failed to get session' });
+          setState({ session: null, user: null, loading: false, error: null });
         }
       }
     };
@@ -53,14 +53,13 @@ export function useAuth() {
     };
   }, [supabase]);
 
-  const signInWithMagicLink = useCallback(async (email: string) => {
+  // Step 1: Send OTP code to email (no redirect needed)
+  const sendOtp = useCallback(async (email: string) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
+        options: { shouldCreateUser: true },
       });
       if (error) {
         setState((prev) => ({ ...prev, loading: false, error: error.message }));
@@ -69,7 +68,34 @@ export function useAuth() {
       setState((prev) => ({ ...prev, loading: false }));
       return { success: true, error: null };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to send magic link';
+      const msg = err instanceof Error ? err.message : 'Failed to send code';
+      setState((prev) => ({ ...prev, loading: false, error: msg }));
+      return { success: false, error: msg };
+    }
+  }, [supabase]);
+
+  // Step 2: Verify the 6-digit code
+  const verifyOtp = useCallback(async (email: string, token: string) => {
+    setState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type: 'email',
+      });
+      if (error) {
+        setState((prev) => ({ ...prev, loading: false, error: error.message }));
+        return { success: false, error: error.message };
+      }
+      setState({
+        session: data.session,
+        user: data.user,
+        loading: false,
+        error: null,
+      });
+      return { success: true, error: null };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Invalid code';
       setState((prev) => ({ ...prev, loading: false, error: msg }));
       return { success: false, error: msg };
     }
@@ -85,5 +111,5 @@ export function useAuth() {
     }
   }, [supabase]);
 
-  return { ...state, signInWithMagicLink, signOut };
+  return { ...state, sendOtp, verifyOtp, signOut };
 }

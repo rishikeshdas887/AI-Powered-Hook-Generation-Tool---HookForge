@@ -3,7 +3,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { securityHeaders, rateLimit, rateLimitError, unauthorizedError, sanitizeInput } from '@/lib/security';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const getAnthropicClient = () => {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey || apiKey === 'your-anthropic-api-key-here') return null;
+  return new Anthropic({ apiKey });
+};
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -20,6 +25,12 @@ export async function POST(request: NextRequest) {
   const { data: { user }, error: authError } = await supabase.auth.getUser(token);
   if (authError || !user) return unauthorizedError();
 
+  const anthropic = getAnthropicClient();
+  if (!anthropic) {
+    // Return empty topics if API not configured — UI will still show trending section
+    return NextResponse.json({ topics: [] }, { headers: securityHeaders() });
+  }
+
   let body;
   try {
     body = await request.json();
@@ -34,17 +45,15 @@ export async function POST(request: NextRequest) {
   }
 
   const sanitizedQuery = sanitizeInput(query, 200);
+  const platformContext = platform && platform !== 'all' ? `for ${platform}` : 'for social media';
 
-  const platformContext = platform && platform !== 'all'
-    ? `for ${platform}`
-    : 'for social media';
-
-  const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-5',
-    max_tokens: 300,
-    messages: [{
-      role: 'user',
-      content: `Generate 6 specific, trending content topic ideas ${platformContext} related to: "${sanitizedQuery}".
+  try {
+    const message = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: `Generate 6 specific, trending content topic ideas ${platformContext} related to: "${sanitizedQuery}".
 
 Return ONLY a JSON array of objects, no other text:
 [
@@ -54,11 +63,10 @@ Return ONLY a JSON array of objects, no other text:
 
 Categories can be: business, lifestyle, health, tech, finance, creativity, relationships, productivity
 
-Make topics specific, viral-worthy, and currently trending. Each topic should be 10-30 words that describes complete content.`,
-    }],
-  });
+Make topics specific, viral-worthy, and currently trending. Each topic should be 10-30 words describing complete content.`,
+      }],
+    });
 
-  try {
     const content = message.content[0];
     if (content.type !== 'text') throw new Error('Invalid response');
 
@@ -66,7 +74,6 @@ Make topics specific, viral-worthy, and currently trending. Each topic should be
     if (!jsonMatch) throw new Error('No JSON found');
 
     const topics = JSON.parse(jsonMatch[0]);
-
     return NextResponse.json({ topics }, { headers: securityHeaders() });
   } catch {
     return NextResponse.json(

@@ -13,9 +13,13 @@ import {
   validateBodySize,
 } from '@/lib/security';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const getAnthropicClient = () => {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey || apiKey === 'your-anthropic-api-key-here') {
+    return null;
+  }
+  return new Anthropic({ apiKey });
+};
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,6 +44,14 @@ const styleGuides: Record<string, string> = {
 };
 
 export async function POST(request: NextRequest) {
+  const anthropic = getAnthropicClient();
+  if (!anthropic) {
+    return NextResponse.json(
+      { error: 'AI service not configured. Please set the ANTHROPIC_API_KEY environment variable.' },
+      { status: 503 }
+    );
+  }
+
   if (!validateBodySize(request, 10)) {
     return NextResponse.json({ error: 'Request too large' }, { status: 413 });
   }
