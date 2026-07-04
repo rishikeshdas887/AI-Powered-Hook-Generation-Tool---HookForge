@@ -1,19 +1,12 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-let browserClient: ReturnType<typeof createClient> | null = null;
+let _client: SupabaseClient | null = null;
 
-export const createBrowserClient = () => {
-  if (browserClient) return browserClient;
-  browserClient = createClient(
+export const createBrowserClient = (): SupabaseClient => {
+  if (_client) return _client;
+  _client = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      auth: {
-        persistSession: true,
-        storageKey: 'hookforge-auth',
-        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-      },
-    }
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
-  return browserClient;
+  return _client;
 };
