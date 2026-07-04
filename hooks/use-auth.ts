@@ -50,7 +50,7 @@ export function useAuth() {
     };
   }, [supabase]);
 
-  // Sign in with email + password (for users who already have a password)
+  // Standard email + password sign-in
   const signIn = useCallback(async (email: string, password: string) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -62,18 +62,18 @@ export function useAuth() {
     return { success: true, error: null };
   }, [supabase]);
 
-  // Create account OR update existing magic-link account with a real password.
-  // Uses an Edge Function with service role — no email confirmation email needed.
+  // Create account OR update existing magic-link account — uses Edge Function (no email confirmation)
   const setupPassword = useCallback(async (email: string, password: string) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
     try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const res = await fetch(`${supabaseUrl}/functions/v1/setup-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password }),
-      });
-
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/setup-password`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.trim(), password }),
+        }
+      );
       const data = await res.json();
 
       if (!res.ok) {
@@ -82,7 +82,6 @@ export function useAuth() {
         return { success: false, error: msg };
       }
 
-      // Set the session returned from the Edge Function
       const { error: sessionError } = await supabase.auth.setSession({
         access_token: data.access_token,
         refresh_token: data.refresh_token,
@@ -102,11 +101,36 @@ export function useAuth() {
     }
   }, [supabase]);
 
+  // Google OAuth — requests YouTube readonly scope so users can import their video topics
+  const signInWithGoogle = useCallback(async () => {
+    setState((prev) => ({ ...prev, loading: true, error: null }));
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        scopes: [
+          'openid',
+          'email',
+          'profile',
+          'https://www.googleapis.com/auth/youtube.readonly',
+        ].join(' '),
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
+    });
+    if (error) {
+      setState((prev) => ({ ...prev, loading: false, error: error.message }));
+    }
+    // On success, the browser navigates away — no state update needed
+  }, [supabase]);
+
   const signOut = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true }));
     await supabase.auth.signOut();
     setState({ user: null, session: null, loading: false, error: null });
   }, [supabase]);
 
-  return { ...state, signIn, setupPassword, signOut };
+  return { ...state, signIn, setupPassword, signInWithGoogle, signOut };
 }

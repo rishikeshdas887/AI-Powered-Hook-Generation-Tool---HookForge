@@ -9,6 +9,7 @@ const RATE_LIMITS = {
   'hooks-save': { maxRequests: 30, windowMs: 60000 },
   'hooks-delete': { maxRequests: 20, windowMs: 60000 },
   'search-topics': { maxRequests: 20, windowMs: 60000 },
+  'youtube-topics': { maxRequests: 10, windowMs: 60000 },
   'default': { maxRequests: 60, windowMs: 60000 },
 };
 

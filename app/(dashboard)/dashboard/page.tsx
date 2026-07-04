@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { HooksDisplay } from '@/components/dashboard/hooks-display';
 import { TrendingSearch } from '@/components/dashboard/trending-search';
+import { YouTubeImport } from '@/components/dashboard/youtube-import';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -212,6 +213,14 @@ export default function DashboardPage() {
 
       {/* Trending Search Section */}
       <TrendingSearch onSelectTopic={handleTrendingSelect} session={session} />
+
+      {/* Content import — YouTube + future integrations */}
+      <div className="mb-6">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2.5">
+          Import from your content
+        </p>
+        <YouTubeImport session={session} onSelectTopic={handleTrendingSelect} />
+      </div>
 
       {/* Generator form */}
       <Card id="generator-form" className="mb-8 border-border bg-card">
