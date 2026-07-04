@@ -27,15 +27,12 @@ export function useAuth() {
 
     const init = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
+        const { data: { session } } = await supabase.auth.getSession();
         if (mounted) {
           setState({ session, user: session?.user ?? null, loading: false, error: null });
         }
       } catch {
-        if (mounted) {
-          setState({ session: null, user: null, loading: false, error: null });
-        }
+        if (mounted) setState({ session: null, user: null, loading: false, error: null });
       }
     };
 
@@ -53,49 +50,53 @@ export function useAuth() {
     };
   }, [supabase]);
 
-  // Step 1: Send OTP code to email (no redirect needed)
-  const sendOtp = useCallback(async (email: string) => {
+  // Sign in with email + password (for users who already have a password)
+  const signIn = useCallback(async (email: string, password: string) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { shouldCreateUser: true },
-      });
-      if (error) {
-        setState((prev) => ({ ...prev, loading: false, error: error.message }));
-        return { success: false, error: error.message };
-      }
-      setState((prev) => ({ ...prev, loading: false }));
-      return { success: true, error: null };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to send code';
-      setState((prev) => ({ ...prev, loading: false, error: msg }));
-      return { success: false, error: msg };
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setState((prev) => ({ ...prev, loading: false, error: error.message }));
+      return { success: false, error: error.message };
     }
+    setState({ session: data.session, user: data.user, loading: false, error: null });
+    return { success: true, error: null };
   }, [supabase]);
 
-  // Step 2: Verify the 6-digit code
-  const verifyOtp = useCallback(async (email: string, token: string) => {
+  // Create account OR update existing magic-link account with a real password.
+  // Uses an Edge Function with service role — no email confirmation email needed.
+  const setupPassword = useCallback(async (email: string, password: string) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token,
-        type: 'email',
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const res = await fetch(`${supabaseUrl}/functions/v1/setup-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
       });
-      if (error) {
-        setState((prev) => ({ ...prev, loading: false, error: error.message }));
-        return { success: false, error: error.message };
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        const msg = data.error || 'Failed to set up account';
+        setState((prev) => ({ ...prev, loading: false, error: msg }));
+        return { success: false, error: msg };
       }
-      setState({
-        session: data.session,
-        user: data.user,
-        loading: false,
-        error: null,
+
+      // Set the session returned from the Edge Function
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
       });
+
+      if (sessionError) {
+        setState((prev) => ({ ...prev, loading: false, error: sessionError.message }));
+        return { success: false, error: sessionError.message };
+      }
+
+      setState({ session: null, user: data.user, loading: false, error: null });
       return { success: true, error: null };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Invalid code';
+      const msg = err instanceof Error ? err.message : 'Network error';
       setState((prev) => ({ ...prev, loading: false, error: msg }));
       return { success: false, error: msg };
     }
@@ -103,13 +104,9 @@ export function useAuth() {
 
   const signOut = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true }));
-    try {
-      await supabase.auth.signOut();
-      setState({ user: null, session: null, loading: false, error: null });
-    } catch {
-      setState((prev) => ({ ...prev, loading: false, error: 'Failed to sign out' }));
-    }
+    await supabase.auth.signOut();
+    setState({ user: null, session: null, loading: false, error: null });
   }, [supabase]);
 
-  return { ...state, sendOtp, verifyOtp, signOut };
+  return { ...state, signIn, setupPassword, signOut };
 }
