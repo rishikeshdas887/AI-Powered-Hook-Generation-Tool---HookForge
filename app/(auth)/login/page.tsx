@@ -1,16 +1,17 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Zap, ArrowLeft, Mail, Lock, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import {
+  Zap, ArrowLeft, Mail, Lock, Loader2, Eye, EyeOff, AlertCircle, ExternalLink,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
 
-// Google logo SVG (exact brand colors)
 function GoogleLogo({ size = 18 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -28,9 +29,32 @@ function AuthForm() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState<boolean | null>(null);
 
   const { signIn, setupPassword, signInWithGoogle, loading, error } = useAuth();
   const router = useRouter();
+
+  // Check if Google OAuth is enabled in this Supabase project
+  useEffect(() => {
+    const checkGoogle = async () => {
+      try {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        const res = await fetch(`${supabaseUrl}/auth/v1/settings`, {
+          headers: { apikey: anonKey! },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setGoogleEnabled(data.external?.google === true);
+        } else {
+          setGoogleEnabled(false);
+        }
+      } catch {
+        setGoogleEnabled(false);
+      }
+    };
+    checkGoogle();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,7 +70,7 @@ function AuthForm() {
   const handleGoogleSignIn = async () => {
     setOauthLoading(true);
     await signInWithGoogle();
-    // Browser navigates away — no need to reset
+    setOauthLoading(false);
   };
 
   const switchMode = (next: 'signin' | 'signup') => {
@@ -62,23 +86,61 @@ function AuthForm() {
   return (
     <div>
       {/* Google OAuth button */}
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full h-11 flex items-center justify-center gap-3 border-border hover:bg-secondary/60 transition-colors mb-4 font-medium"
-        onClick={handleGoogleSignIn}
-        disabled={oauthLoading || loading}
-      >
-        {oauthLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <GoogleLogo size={18} />
-        )}
-        Continue with Google
-      </Button>
+      {googleEnabled === true ? (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full h-11 flex items-center justify-center gap-3 border-border hover:bg-secondary/60 transition-colors mb-4 font-medium"
+          onClick={handleGoogleSignIn}
+          disabled={oauthLoading || loading}
+        >
+          {oauthLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleLogo size={18} />}
+          Continue with Google
+        </Button>
+      ) : googleEnabled === false ? (
+        /* Google not enabled — show setup link */
+        <div className="mb-4 p-3 rounded-xl border border-border bg-secondary/30">
+          <div className="flex items-center gap-3 mb-2">
+            <GoogleLogo size={16} />
+            <span className="text-sm font-medium">Google Sign-In</span>
+            <span className="ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-400/10 text-amber-400 border border-amber-400/20">
+              Setup Required
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-2">
+            Enable Google sign-in in 2 steps:
+          </p>
+          <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+            <li>
+              <a
+                href="https://console.cloud.google.com/apis/credentials"
+                target="_blank"
+                rel="noreferrer"
+                className="text-amber-400 hover:underline inline-flex items-center gap-0.5"
+              >
+                Create Google OAuth credentials <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+            </li>
+            <li>
+              Add them in{' '}
+              <a
+                href="https://supabase.com/dashboard/project/hjksijvjdkhbuxufrlzh/auth/providers"
+                target="_blank"
+                rel="noreferrer"
+                className="text-amber-400 hover:underline inline-flex items-center gap-0.5"
+              >
+                Supabase → Auth → Providers <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+            </li>
+          </ol>
+        </div>
+      ) : (
+        /* Loading state */
+        <div className="mb-4 h-11 rounded-xl bg-secondary/40 animate-pulse" />
+      )}
 
       {/* Divider */}
-      <div className="relative my-5">
+      <div className="relative my-4">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-border" />
         </div>
@@ -96,9 +158,7 @@ function AuthForm() {
             onClick={() => switchMode(m)}
             className={cn(
               'flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-150',
-              mode === m
-                ? 'bg-card text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+              mode === m ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
             )}
           >
             {m === 'signin' ? 'Sign In' : 'Create Account'}
@@ -107,7 +167,6 @@ function AuthForm() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Email */}
         <div className="space-y-1.5">
           <Label htmlFor="email">Email address</Label>
           <div className="relative">
@@ -122,11 +181,11 @@ function AuthForm() {
               required
               disabled={loading}
               autoComplete="email"
+              autoFocus
             />
           </div>
         </div>
 
-        {/* Password */}
         <div className="space-y-1.5">
           <Label htmlFor="password">Password</Label>
           <div className="relative">
@@ -153,7 +212,6 @@ function AuthForm() {
             </button>
           </div>
 
-          {/* Strength bar */}
           {mode === 'signup' && password.length > 0 && (
             <div className="flex items-center gap-1.5 mt-1.5">
               {(['weak', 'medium', 'strong'] as const).map((level, i) => (
@@ -161,12 +219,12 @@ function AuthForm() {
                   key={level}
                   className={cn(
                     'h-1 flex-1 rounded-full transition-colors duration-200',
-                    passwordStrength === 'weak'   && i === 0 ? 'bg-red-500'    : '',
-                    passwordStrength === 'medium' && i <= 1  ? 'bg-amber-400'  : '',
-                    passwordStrength === 'strong'             ? 'bg-green-500'  : '',
-                    !( (passwordStrength === 'weak' && i === 0) ||
-                       (passwordStrength === 'medium' && i <= 1) ||
-                        passwordStrength === 'strong' ) ? 'bg-border' : ''
+                    passwordStrength === 'weak'   && i === 0 ? 'bg-red-500'   : '',
+                    passwordStrength === 'medium' && i <= 1  ? 'bg-amber-400' : '',
+                    passwordStrength === 'strong'             ? 'bg-green-500' : '',
+                    !((passwordStrength === 'weak' && i === 0) ||
+                      (passwordStrength === 'medium' && i <= 1) ||
+                       passwordStrength === 'strong') ? 'bg-border' : ''
                   )}
                 />
               ))}
@@ -182,7 +240,6 @@ function AuthForm() {
           )}
         </div>
 
-        {/* Error */}
         {error && (
           <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -198,10 +255,9 @@ function AuthForm() {
           </div>
         )}
 
-        {/* Existing magic-link user note */}
         {mode === 'signup' && (
           <p className="text-xs text-muted-foreground bg-amber-400/5 border border-amber-400/20 rounded-lg px-3 py-2">
-            Previously used a magic link? Enter your email here with a new password to link your account.
+            Previously used a magic link? Enter your email + a new password to link your account.
           </p>
         )}
 
@@ -220,15 +276,11 @@ function AuthForm() {
         <p className="text-center text-xs text-muted-foreground">
           {mode === 'signin' ? (
             <>No account?{' '}
-              <button type="button" onClick={() => switchMode('signup')} className="text-amber-400 hover:text-amber-300 transition-colors font-medium">
-                Create one free
-              </button>
+              <button type="button" onClick={() => switchMode('signup')} className="text-amber-400 hover:text-amber-300 transition-colors font-medium">Create one free</button>
             </>
           ) : (
-            <>Have a password?{' '}
-              <button type="button" onClick={() => switchMode('signin')} className="text-amber-400 hover:text-amber-300 transition-colors font-medium">
-                Sign in
-              </button>
+            <>Already have a password?{' '}
+              <button type="button" onClick={() => switchMode('signin')} className="text-amber-400 hover:text-amber-300 transition-colors font-medium">Sign in</button>
             </>
           )}
         </p>
