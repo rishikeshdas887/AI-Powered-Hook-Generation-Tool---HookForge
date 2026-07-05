@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Sparkles, ArrowRight, Loader2, TrendingUp } from 'lucide-react';
+import { Sparkles, ArrowRight, Loader2, TrendingUp, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -202,13 +202,22 @@ export default function DashboardPage() {
   return (
     <div className="max-w-5xl mx-auto">
       {/* Page header */}
-      <div className="mb-6">
-        <h1 className="font-heading text-2xl sm:text-3xl font-bold mb-1">
-          Generate Viral Hooks
-        </h1>
-        <p className="text-muted-foreground text-sm sm:text-base">
-          Search trending topics or describe your content to generate scroll-stopping hooks.
-        </p>
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <h1 className="font-heading text-2xl sm:text-3xl font-bold mb-1">
+            Generate Viral Hooks
+          </h1>
+          <p className="text-muted-foreground text-sm sm:text-base">
+            Search trending topics or describe your content to generate scroll-stopping hooks.
+          </p>
+        </div>
+        {generationsCount > 0 && (
+          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-400/5 border border-amber-400/15 shrink-0">
+            <Zap className="h-4 w-4 text-amber-400" />
+            <span className="text-sm font-medium text-amber-400">{generationsCount}</span>
+            <span className="text-sm text-muted-foreground">hooks generated</span>
+          </div>
+        )}
       </div>
 
       {/* Trending Search Section */}
@@ -333,6 +342,8 @@ export default function DashboardPage() {
         isLoading={isLoading}
         onSaveHook={handleSaveHook}
         onRegenerate={generateHooks}
+        platform={platform}
+        style={style}
       />
     </div>
   );
