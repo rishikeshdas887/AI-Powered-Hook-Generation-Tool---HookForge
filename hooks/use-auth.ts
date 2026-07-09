@@ -92,7 +92,9 @@ export function useAuth() {
         return { success: false, error: sessionError.message };
       }
 
-      setState({ session: null, user: data.user, loading: false, error: null });
+      // Get the session after setting it
+      const { data: { session: newSession } } = await supabase.auth.getSession();
+      setState({ session: newSession, user: newSession?.user ?? null, loading: false, error: null });
       return { success: true, error: null };
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Network error';

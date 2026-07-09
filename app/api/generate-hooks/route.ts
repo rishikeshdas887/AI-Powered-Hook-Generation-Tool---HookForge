@@ -13,30 +13,29 @@ import {
   validateBodySize,
 } from '@/lib/security';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
 type AIProvider = 'anthropic' | 'openai' | 'gemini';
 
-const getAvailableProvider = (): { provider: AIProvider; client: any } | null => {
-  // Primary: Anthropic Claude
+const getAvailableProvider = (): { provider: AIProvider } | null => {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey && anthropicKey !== 'your-anthropic-api-key-here') {
-    return { provider: 'anthropic', client: new Anthropic({ apiKey: anthropicKey }) };
+    return { provider: 'anthropic' };
   }
 
-  // Fallback 1: OpenAI GPT
   const openaiKey = process.env.OPENAI_API_KEY;
   if (openaiKey && openaiKey !== 'your-openai-api-key-here') {
-    return { provider: 'openai', client: null }; // Will use fetch
+    return { provider: 'openai' };
   }
 
-  // Fallback 2: Google Gemini
   const geminiKey = process.env.GEMINI_API_KEY;
   if (geminiKey && geminiKey !== 'your-gemini-api-key-here') {
-    return { provider: 'gemini', client: null }; // Will use fetch
+    return { provider: 'gemini' };
   }
 
   return null;
@@ -44,10 +43,10 @@ const getAvailableProvider = (): { provider: AIProvider; client: any } | null =>
 
 const platformGuides: Record<string, string> = {
   tiktok: 'TikTok: Short, punchy, attention-grabbing. Must hook within the first 2 seconds.',
-  instagram: 'Instagram Reels: Visual-first, trendy, relatable. Use POV: and things that just make sense patterns.',
-  youtube: 'YouTube Shorts: Value-driven, educational hooks. Use patterns like Heres how I and 3 things I wish I knew.',
-  twitter: 'Twitter/X: Controversial, thread-worthy, provocative. Use Unpopular opinion and Hot take patterns.',
-  linkedin: 'LinkedIn: Professional, career-focused, thought leadership. Use After X years in patterns.',
+  instagram: 'Instagram Reels: Visual-first, trendy, relatable.',
+  youtube: 'YouTube Shorts: Value-driven, educational hooks.',
+  twitter: 'Twitter/X: Controversial, thread-worthy, provocative.',
+  linkedin: 'LinkedIn: Professional, career-focused, thought leadership.',
 };
 
 const styleGuides: Record<string, string> = {
@@ -69,7 +68,7 @@ Style: ${styleGuides[style]}
 Rules:
 1. Generate exactly 5 unique hooks
 2. Each hook: 1-2 sentences max
-3. No clichés, be specific and actionable
+3. No cliches, be specific and actionable
 4. Format: one per line, numbered 1-5
 5. NO extra text or explanations`,
 
@@ -79,8 +78,9 @@ Generate 5 hooks numbered 1-5:`,
   };
 }
 
-async function streamAnthropic(client: Anthropic, systemPrompt: string, userPrompt: string) {
-  return client.messages.stream({
+async function streamAnthropic(systemPrompt: string, userPrompt: string) {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+  return anthropic.messages.stream({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 500,
     messages: [{ role: 'user', content: userPrompt }],
@@ -125,7 +125,6 @@ async function streamGemini(systemPrompt: string, userPrompt: string) {
 
   if (!response.ok) throw new Error(`Gemini error: ${response.status}`);
   const data = await response.json();
-  // Gemini returns non-streaming, convert to readable
   return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
@@ -137,12 +136,33 @@ export async function POST(request: NextRequest) {
   const rateResult = rateLimit(request, 'generate-hooks');
   if (!rateResult.success) return rateLimitError(rateResult.resetTime);
 
-  const authHeader = request.headers.get('authorization');
-  const token = authHeader?.replace('Bearer ', '');
-  if (!token) return unauthorizedError();
+  const supabase = getSupabase();
 
+  const authHeader = request.headers.get('authorization');
+  const token = authHeader?.replace('Bearer ', '').trim();
+
+  if (!token) {
+    console.log('[generate-hooks] No authorization token provided');
+    return unauthorizedError();
+  }
+
+  // Verify the token with Supabase
   const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-  if (authError || !user) return unauthorizedError();
+
+  if (authError) {
+    console.log('[generate-hooks] Auth error:', authError.message);
+    return NextResponse.json(
+      { error: `Authentication failed: ${authError.message}` },
+      { status: 401, headers: securityHeaders() }
+    );
+  }
+
+  if (!user) {
+    console.log('[generate-hooks] No user found for token');
+    return unauthorizedError();
+  }
+
+  console.log('[generate-hooks] User authenticated:', user.email);
 
   let body;
   try {
@@ -170,8 +190,9 @@ export async function POST(request: NextRequest) {
 
   // Check for available AI provider
   const providerInfo = getAvailableProvider();
+
   if (!providerInfo) {
-    // Fallback: Return cached trending hooks related to topic
+    // Fallback: Return cached trending hooks
     const { data: cached } = await supabase
       .from('trending_hooks')
       .select('hook_text, category')
@@ -197,31 +218,25 @@ export async function POST(request: NextRequest) {
   const prompts = buildPrompt(sanitizedTopic, platform, style, sanitizedContext);
 
   // Get or create user profile
-  let { data: profile } = await supabase
+  const { data: profile } = await supabase
     .from('user_profiles')
     .select('generations_count')
     .eq('user_id', user.id)
-    .single();
+    .maybeSingle();
 
   if (!profile) {
-    const { data: newProfile } = await supabase
+    await supabase
       .from('user_profiles')
-      .insert({ user_id: user.id })
-      .select('generations_count')
-      .single();
-    profile = newProfile;
+      .insert({ user_id: user.id });
   }
 
   const encoder = new TextEncoder();
 
   try {
     if (provider === 'anthropic') {
-      const stream = await streamAnthropic(
-        providerInfo.client,
-        prompts.system,
-        prompts.user
-      );
+      const stream = await streamAnthropic(prompts.system, prompts.user);
 
+      // Increment usage count
       await supabase
         .from('user_profiles')
         .update({
@@ -323,7 +338,6 @@ export async function POST(request: NextRequest) {
         })
         .eq('user_id', user.id);
 
-      // Return as a single response (Gemini doesn't support streaming in this simple implementation)
       return NextResponse.json({
         text,
         provider: 'gemini',

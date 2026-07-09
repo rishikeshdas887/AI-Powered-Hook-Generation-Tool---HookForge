@@ -86,6 +86,11 @@ export default function DashboardPage() {
       return;
     }
 
+    if (!session.access_token) {
+      toast({ variant: 'destructive', description: 'Session not ready. Please refresh the page.' });
+      return;
+    }
+
     setIsLoading(true);
     setHooks([]);
 
